@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/pix/criar", "destination": "/api/pix-criar" },
+    { "source": "/api/pix/status/:id", "destination": "/api/pix-status?id=:id" },
+    { "source": "/api/ping", "destination": "/api/ping" }
+  ]
+}

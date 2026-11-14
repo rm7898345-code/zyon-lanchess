@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>ZYON Admin — Itens, Estoque e Pix</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI', Arial, sans-serif; }
+  body { background:#12121a; color:#eee; min-height:100vh; padding-bottom:60px; }
+  header { background:linear-gradient(90deg,#c62828,#ff5f00); padding:20px; text-align:center; }
+  header h1 { color:#fff; letter-spacing:3px; font-size:1.5rem; }
+  header p { color:rgba(255,255,255,.85); font-size:.8rem; margin-top:4px; }
+  .container { max-width:800px; margin:0 auto; padding:20px; }
+  nav { margin-bottom:20px; text-align:center; }
+  nav a { color:#ffb400; text-decoration:none; margin:0 12px; font-weight:700; font-size:.9rem; }
+  nav a:hover { text-decoration:underline; }
+  .form { background:#1e1e2a; border-radius:12px; padding:20px; margin-bottom:24px; box-shadow:0 4px 12px rgba(0,0,0,.4); }
+  .form h2 { color:#ffb400; margin-bottom:14px; font-size:1.1rem; }
+  .form .row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  .form .campo { flex:1; min-width:140px; display:flex; flex-direction:column; }
+  .form label { font-size:.8rem; color:#aaa; margin-bottom:5px; }
+  .form input, .form select { padding:10px; border-radius:8px; border:1px solid #333; background:#12121a; color:#fff; font-size:1rem; }
+  .form input:focus { outline:2px solid #ff5f00; }
+  .form button { width:100%; background:linear-gradient(90deg,#ff5f00,#ffb400); color:#fff; border:none; padding:12px; border-radius:8px; font-weight:700; cursor:pointer; font-size:1rem; }
+  .dica { color:#888; font-size:.78rem; margin-top:8px; }
+  .preview-foto { max-height:120px; border-radius:8px; margin-top:6px; border:2px solid #2c2c3a; }
+  .item-card { background:#1e1e2a; border-radius:12px; padding:14px; margin-bottom:10px; display:flex; gap:14px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,.4); }
+  .item-card img { width:90px; height:90px; object-fit:contain; background:#2c2c3a; border-radius:8px; flex-shrink:0; }
+  .item-card .info { flex:1; }
+  .item-card .info b { font-size:1rem; }
+  .item-card .det { color:#aaa; font-size:.82rem; margin-top:2px; }
+  .item-card .preco { color:#4caf50; font-weight:800; }
+  .item-card button { background:#8b0000; color:#fff; border:none; padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:700; }
+  .vazio { color:#888; text-align:center; padding:30px; }
+  .ok-salvo { color:#4caf50; font-size:.8rem; margin-top:8px; display:none; }
+</style>
+</head>
+<body>
+
+<!-- ====== TRAVA DE SEGURANÇA DO ADMIN ====== -->
+<div id="telaLogin" style="position:fixed; inset:0; background:#12121a; z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:#1e1e2a; padding:30px; border-radius:14px; max-width:380px; width:100%; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.6)">
+    <h2 style="color:#ffb400; margin-bottom:6px">🔒 Área Restrita</h2>
+    <p id="loginMsg" style="color:#999; font-size:.85rem; margin-bottom:14px">Digite a senha do administrador para acessar</p>
+    <input type="password" id="senhaAdmin" autocomplete="off" style="width:100%; padding:12px; border-radius:8px; border:1px solid #333; background:#12121a; color:#fff; font-size:1rem; text-align:center" placeholder="Senha">
+    <button id="btnEntrar" style="width:100%; margin-top:12px; background:linear-gradient(90deg,#ff5f00,#ffb400); border:none; color:#fff; padding:12px; border-radius:8px; font-weight:800; cursor:pointer">Entrar</button>
+  </div>
+</div>
+<script>
+  /* ============================================================
+     GUARDA DE SEGURANÇA — autenticação do admin
+     - Senha guardada como hash SHA-256 (nunca em texto puro)
+     - Bloqueio progressivo após tentativas erradas
+     - Sessão expira após 30 min de inatividade
+     ============================================================ */
+  var GUARDA = (function() {
+    var HASH_KEY = 'zyon_admin_hash';
+    var TENT_KEY = 'zyon_admin_tentativas';
+    var LOCK_KEY = 'zyon_admin_bloqueio_ate';
+    var SESS_KEY = 'zyon_admin_sessao';
+
+    async function sha256(txt) {
+      var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+      return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+    }
+
+    function bloqueadoAte() {
+      return parseInt(localStorage.getItem(LOCK_KEY) || '0', 10);
+    }
+    function estaBloqueado() {
+      return Date.now() < bloqueadoAte();
+    }
+    function segundosRestantes() {
+      return Math.ceil((bloqueadoAte() - Date.now()) / 1000);
+    }
+    function sessaoValida() {
+      var s = JSON.parse(sessionStorage.getItem(SESS_KEY) || 'null');
+      if (!s) return false;
+      if (Date.now() - s.ts > 30 * 60 * 1000) { sessionStorage.removeItem(SESS_KEY); return false; }
+      s.ts = Date.now();
+      sessionStorage.setItem(SESS_KEY, JSON.stringify(s));
+      return true;
+    }
+
+    async function tentarEntrar(senha) {
+      if (estaBloqueado()) return { ok:false, msg:'🔒 Bloqueado por ' + segundosRestantes() + 's (tentativas demais)' };
+      if (typeof senha !== 'string' || senha.length > 128) return { ok:false, msg:'⚠ Senha inválida' };
+
+      var hashSalvo = localStorage.getItem(HASH_KEY);
+      var hash = await sha256(senha + '|zyon');
+
+      /* Primeiro acesso: CRIA a senha */
+      if (!hashSalvo) {
+        if (senha.length < 8) return { ok:false, msg:'⚠ Crie uma senha com pelo menos 8 caracteres!' };
+        localStorage.setItem(HASH_KEY, hash);
+        abrirSessao();
+        return { ok:true, msg:'✅ Senha criada! Guarde-a bem — é ela que protege o painel.' };
+      }
+
+      if (hash !== hashSalvo) {
+        var tent = parseInt(localStorage.getItem(TENT_KEY) || '0', 10) + 1;
+        localStorage.setItem(TENT_KEY, String(tent));
+        if (tent >= 5) {
+          var segundos = 30 * Math.pow(2, tent - 5);   /* 30s, 1min, 2min, 4min... */
+          localStorage.setItem(LOCK_KEY, String(Date.now() + segundos * 1000));
+          return { ok:false, msg:'🔒 ' + tent + ' tentativas erradas. Bloqueado por ' + segundos + 's!' };
+        }
+        return { ok:false, msg:'⚠ Senha incorreta (' + tent + '/5 tentativas)' };
+      }
+
+      localStorage.setItem(TENT_KEY, '0');
+      abrirSessao();
+      return { ok:true, msg:'' };
+    }
+
+    function abrirSessao() {
+      sessionStorage.setItem(SESS_KEY, JSON.stringify({ ts: Date.now(), tk: Math.random().toString(36).slice(2) }));
+    }
+
+    return {
+      init: async function() {
+        var overlay = document.getElementById('telaLogin');
+        var inp = document.getElementById('senhaAdmin');
+        var btn = document.getElementById('btnEntrar');
+        var msg = document.getElementById('loginMsg');
+
+        async function verificar() {
+          var r = await tentarEntrar(inp.value);
+          msg.textContent = r.msg || 'Acesso liberado!';
+          msg.style.color = r.ok ? '#4caf50' : '#ff6b6b';
+          if (r.ok) {
+            overlay.style.display = 'none';
+            inp.value = '';
+            inp.removeEventListener('keydown', onEnter);
+          } else {
+            inp.value = '';
+            inp.focus();
+          }
+        }
+        function onEnter(e) { if (e.key === 'Enter') verificar(); }
+
+        if (sessaoValida()) { overlay.style.display = 'none'; return; }
+        if (!localStorage.getItem(HASH_KEY)) {
+          msg.textContent = 'Primeiro acesso: crie a senha do administrador (mín. 8 caracteres)';
+          msg.style.color = '#ffb400';
+        }
+        if (estaBloqueado()) {
+          msg.textContent = '🔒 Bloqueado por ' + segundosRestantes() + 's';
+          msg.style.color = '#ff6b6b';
+        }
+        btn.addEventListener('click', verificar);
+        inp.addEventListener('keydown', onEnter);
+        inp.focus();
+
+        /* Expiração por inatividade: re-trava a página após 30 min */
+        setInterval(function() {
+          if (!sessaoValida() && overlay.style.display === 'none') location.reload();
+        }, 60000);
+      }
+    };
+  })();
+  GUARDA.init();
+</script>
+<!-- ====== FIM DA TRAVA ====== -->
+
+<header>
+  <h1>ZYON ADMIN — Itens, Estoque e Pix</h1>
+  <p>Cadastre os lanches com foto e configure a chave Pix de recebimento</p>
+</header>
+
+<div class="container">
+  <nav>
+    <a href="index.html">🏪 Site do Cliente</a>
+    <a href="admin.html">📊 Painel de Pedidos</a>
+    <a href="admin_itens.html">🍔 Cadastro de Itens</a>
+  </nav>
+
+  <!-- Backup / Migração -->
+  <div class="form" style="border:1px dashed #ffb400">
+    <h2>💾 Backup / Migração de Dados</h2>
+    <div class="row" style="margin-bottom:0">
+      <div class="campo">
+        <button onclick="exportarDados()" style="background:linear-gradient(90deg,#0277bd,#00897b)">📤 Exportar todos os dados</button>
+        <div class="dica">Baixa um arquivo .json com itens, pedidos e configurações. Use para trocar de navegador/endereço ou fazer backup. ⚠ O arquivo contém suas chaves — guarde com cuidado!</div>
+      </div>
+      <div class="campo">
+        <button onclick="document.getElementById('importFile').click()" style="background:#444">📥 Importar dados</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importarDados(this)">
+        <div class="dica">Restaura um backup .json exportado antes. Substitui os dados atuais.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config Pix -->
+  <div class="form">
+    <h2>💳 Configuração do Pagamento (SyncPay)</h2>
+    <div class="row">
+      <div class="campo">
+        <label>Client ID (painel SyncPay → Developer → API) *</label>
+        <input type="text" id="cfgClientId" placeholder="Ex: 9f3c5b3a-...">
+      </div>
+      <div class="campo">
+        <label>Client Secret (nunca compartilhe) *</label>
+        <input type="password" id="cfgSecret" placeholder="••••••••">
+      </div>
+    </div>
+    <div class="row">
+      <div class="campo">
+        <label>Chave Pix (fallback manual, opcional)</label>
+        <input type="text" id="cfgChave" placeholder="Ex: 11999998888">
+      </div>
+      <div class="campo">
+        <label>Nome do recebedor (fallback)</label>
+        <input type="text" id="cfgNome" maxlength="25" placeholder="Ex: ZYON LANCHES">
+      </div>
+      <div class="campo">
+        <label>Cidade (fallback)</label>
+        <input type="text" id="cfgCidade" maxlength="15" placeholder="Ex: SAO PAULO">
+      </div>
+    </div>
+    <button onclick="salvarConfig()">💾 Salvar Configuração SyncPay</button>
+    <div class="ok-salvo" id="okConfig">✅ Salvo! O cliente receberá o Pix gerado pela SyncPay e o pagamento será confirmado AUTOMATICAMENTE quando aprovado.</div>
+  </div>
+
+  <!-- Cadastro de itens -->
+  <div class="form">
+    <h2 id="tituloForm">➕ Adicionar Item (com foto)</h2>
+    <div class="row">
+      <div class="campo">
+        <label>Categoria *</label>
+        <select id="categoria" style="padding:10px;border-radius:8px;border:1px solid #333;background:#12121a;color:#fff;font-size:1rem">
+          <option value="Lanches">🍔 Lanches</option>
+          <option value="Acompanhamentos">🍟 Acompanhamentos</option>
+          <option value="Combos">🥤 Combos</option>
+          <option value="Sobremesas">🍨 Sobremesas</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label>Nome do lanche *</label>
+        <input type="text" id="nome" maxlength="60" placeholder='Ex: "Big Mac"'>
+      </div>
+      <div class="campo">
+        <label>Preço em R$ *</label>
+        <input type="number" id="preco" step="0.01" min="0" placeholder='Ex: "25.00"'>
+      </div>
+      <div class="campo">
+        <label>Estoque</label>
+        <input type="number" id="estoque" step="1" min="0" value="999">
+      </div>
+    </div>
+    <div class="row">
+      <div class="campo">
+        <label>📸 Foto do produto (upload)</label>
+        <input type="file" id="foto" accept="image/*" onchange="previewFoto(this)">
+      </div>
+      <div class="campo">
+        <label>…ou URL da foto</label>
+        <input type="text" id="fotoUrl" placeholder="https://.../bigmac.jpg">
+      </div>
+    </div>
+    <img id="previewImg" class="preview-foto" style="display:none" alt="">
+    <button onclick="adicionarItem()" id="btnForm">Adicionar Item</button>
+    <button onclick="cancelarEdicao()" id="btnCancelar" style="display:none; background:#444; margin-top:8px">✖ Cancelar edição</button>
+    <div class="dica">💡 Use estoque <b>999</b> para itens ilimitados. Prefira fotos pequenas (máx. ~100KB) para não lotar o armazenamento do navegador.</div>
+  </div>
+
+  <h2 style="color:#ffb400; margin-bottom:12px; font-size:1.1rem">📋 Itens Cadastrados</h2>
+  <div id="listaItens"></div>
+</div>
+
+<footer style="text-align:center; padding:30px 20px; color:#777; font-size:.82rem">
+  ZYON © 2026 — Não afiliado ao McDonald's. Marcas pertencem aos seus titulares.<br>
+  <a href="termos.html" style="color:#ffb400; text-decoration:none">Termos de Uso</a> •
+  <a href="termos.html#dados" style="color:#ffb400; text-decoration:none">Privacidade</a> •
+  <a href="termos.html#reembolso" style="color:#ffb400; text-decoration:none">Política de Reembolso</a>
+</footer>
+
+<script>
+  var itens = lerLS('zyon_itens', '[]');
+  var fotoBase64 = null;
+
+  /* ---------- Config Pix ---------- */
+  function carregarConfig() {
+    var cfg = lerLS('zyon_config', '{}');
+    if (cfg.clientId) document.getElementById('cfgClientId').value = cfg.clientId;
+    if (cfg.clientSecret) document.getElementById('cfgSecret').value = cfg.clientSecret;
+    if (cfg.chavePix) document.getElementById('cfgChave').value = cfg.chavePix;
+    if (cfg.nomePix) document.getElementById('cfgNome').value = cfg.nomePix;
+    if (cfg.cidadePix) document.getElementById('cfgCidade').value = cfg.cidadePix;
+  }
+
+  async function salvarConfig() {
+    var clientId = document.getElementById('cfgClientId').value.trim();
+    var secret = document.getElementById('cfgSecret').value.trim();
+    if (!clientId || !secret) { alert('⚠ Preencha o Client ID e o Client Secret da SyncPay!'); return; }
+    localStorage.setItem('zyon_config', JSON.stringify({
+      clientId: clientId,
+      clientSecret: secret,
+      chavePix: document.getElementById('cfgChave').value.trim(),
+      nomePix: document.getElementById('cfgNome').value.trim() || 'ZYON',
+      cidadePix: document.getElementById('cfgCidade').value.trim() || 'SAO PAULO'
+    }));
+
+    /* Se o servidor proxy estiver rodando, envia as chaves para ele
+       (ficam no config.json do servidor, FORA do navegador — mais seguro) */
+    var api = (location.protocol === 'file:') ? 'http://localhost:3000/api' : '/api';
+    try {
+      var r = await fetch(api + '/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: clientId, clientSecret: secret })
+      });
+      var d = await r.json();
+      if (d.ok) {
+        alert('✅ SUCESSO! Chaves salvas no SERVIDOR (modo seguro).\n\nAs chaves ficam no servidor, fora do navegador. Os Pix agora serão gerados automaticamente!');
+      } else {
+        alert('⚠ O servidor respondeu, mas recusou: ' + (d.error || 'erro desconhecido'));
+      }
+    } catch (e) {
+      alert('❌ NÃO FOI POSSÍVEL enviar as chaves ao servidor!\n\nMotivo: ' + e.message + '\n\n➡ Rodando local: abra http://localhost:3000/admin_itens.html (com "node servidor.js" rodando)\n➡ Na VERCEL: as chaves são configuradas como variáveis de ambiente no painel da Vercel (SYNC_CLIENT_ID e SYNC_CLIENT_SECRET) — não é por aqui.');
+    }
+
+    document.getElementById('okConfig').style.display = 'block';
+  }
+
+  /* ---------- Foto ---------- */
+  function previewFoto(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      fotoBase64 = e.target.result;
+      var img = document.getElementById('previewImg');
+      img.src = fotoBase64;
+      img.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  var CATEGORIAS = [
+    { id: 'Lanches', nome: '🍔 Lanches' },
+    { id: 'Acompanhamentos', nome: '🍟 Acompanhamentos' },
+    { id: 'Combos', nome: '🥤 Combos' },
+    { id: 'Sobremesas', nome: '🍨 Sobremesas' }
+  ];
+
+  function adicionarItem() {
+    var nome = document.getElementById('nome').value.trim();
+    var categoria = document.getElementById('categoria').value;
+    var preco = parseFloat(document.getElementById('preco').value);
+    var estoque = parseInt(document.getElementById('estoque').value, 10);
+    var fotoUrl = document.getElementById('fotoUrl').value.trim();
+    var foto = fotoBase64 || fotoUrl || null;
+
+    if (!nome) { alert('⚠ Digite o nome do lanche!'); return; }
+    if (isNaN(preco) || preco <= 0) { alert('⚠ Digite um preço válido em R$!'); return; }
+    if (isNaN(estoque) || estoque < 0) { alert('⚠ Digite um estoque válido!'); return; }
+
+    if (idxEditando !== null) {
+      /* Salvando alterações de um item existente */
+      var it = itens[idxEditando];
+      it.nome = nome;
+      it.categoria = categoria;
+      it.preco_real = preco;
+      it.estoque = estoque;
+      /* foto: se o usuário subiu nova foto ou digitou nova URL, troca; senão mantém */
+      if (foto) it.foto = foto;
+      salvarItens();
+      cancelarEdicao();
+      alert('✅ Item atualizado com sucesso!');
+      return;
+    }
+
+    itens.push({ id: 'item_' + Date.now(), nome: nome, categoria: categoria, preco_real: preco, estoque: estoque, foto: foto });
+
+    document.getElementById('nome').value = '';
+    document.getElementById('preco').value = '';
+    document.getElementById('estoque').value = '999';
+    document.getElementById('fotoUrl').value = '';
+    document.getElementById('foto').value = '';
+    document.getElementById('previewImg').style.display = 'none';
+    fotoBase64 = null;
+
+    salvarItens();
+  }
+
+  /* ---------- Edição de itens ---------- */
+  var idxEditando = null;
+
+  function editarItem(idx) {
+    idxEditando = idx;
+    var it = itens[idx];
+    document.getElementById('nome').value = it.nome;
+    document.getElementById('categoria').value = it.categoria || 'Lanches';
+    document.getElementById('preco').value = it.preco_real;
+    document.getElementById('estoque').value = it.estoque;
+    document.getElementById('fotoUrl').value = '';
+    fotoBase64 = null;
+    var pv = document.getElementById('previewImg');
+    if (it.foto) { pv.src = it.foto; pv.style.display = 'block'; }
+    else pv.style.display = 'none';
+
+    document.getElementById('btnForm').textContent = '💾 Salvar Alterações';
+    document.getElementById('btnCancelar').style.display = 'block';
+    document.getElementById('tituloForm').textContent = '✏ Editando: ' + it.nome;
+    document.querySelector('.form').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function cancelarEdicao() {
+    idxEditando = null;
+    document.getElementById('nome').value = '';
+    document.getElementById('preco').value = '';
+    document.getElementById('estoque').value = '999';
+    document.getElementById('fotoUrl').value = '';
+    document.getElementById('foto').value = '';
+    document.getElementById('previewImg').style.display = 'none';
+    fotoBase64 = null;
+    document.getElementById('btnForm').textContent = 'Adicionar Item';
+    document.getElementById('btnCancelar').style.display = 'none';
+    document.getElementById('tituloForm').textContent = '➕ Adicionar Item (com foto)';
+  }
+
+  function salvarItens() {
+    localStorage.setItem('zyon_itens', JSON.stringify(itens));
+    localStorage.setItem('zyon_cardapio', JSON.stringify(itens));
+    renderizarItens();
+  }
+
+  function renderizarItens() {
+    var lista = document.getElementById('listaItens');
+    lista.innerHTML = '';
+    if (itens.length === 0) {
+      lista.innerHTML = '<div class="vazio">Nenhum item cadastrado ainda.</div>';
+      return;
+    }
+    /* Agrupa por categoria */
+    CATEGORIAS.forEach(function(cat) {
+      var doGrupo = itens.filter(function(i){ return (i.categoria || 'Lanches') === cat.id; });
+      if (doGrupo.length === 0) return;
+      var h = document.createElement('h3');
+      h.style.cssText = 'color:#ffb400; margin:18px 0 10px; font-size:1rem';
+      h.textContent = cat.nome;
+      lista.appendChild(h);
+      doGrupo.forEach(function(item) {
+        var idx = itens.indexOf(item);
+        var div = document.createElement('div');
+        div.className = 'item-card';
+        div.innerHTML =
+          '<img src="' + fotoSegura(item.foto) + '" alt="" onerror="this.style.visibility=\'hidden\'">' +
+          '<div class="info"><b>' + esc(item.nome) + '</b>' +
+          '<div class="det">Estoque: ' + (item.estoque >= 999 ? 'Ilimitado (999)' : item.estoque) + '</div></div>' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+          '<span class="preco">R$ ' + item.preco_real.toFixed(2) + '</span>' +
+          '<button onclick="editarItem(' + idx + ')" style="background:#0277bd">✏</button>' +
+          '<button onclick="removerItem(' + idx + ')">Remover</button></div>';
+        lista.appendChild(div);
+      });
+    });
+    /* Itens sem categoria definida (antigos) */
+    var semCat = itens.filter(function(i){ return !i.categoria; });
+    if (semCat.length > 0) {
+      var h2 = document.createElement('h3');
+      h2.style.cssText = 'color:#888; margin:18px 0 10px; font-size:.9rem';
+      h2.textContent = '📎 Sem categoria (cadastre novamente para classificar)';
+      lista.appendChild(h2);
+      semCat.forEach(function(item) {
+        var idx = itens.indexOf(item);
+        var div = document.createElement('div');
+        div.className = 'item-card';
+        div.innerHTML =
+          '<img src="' + fotoSegura(item.foto) + '" alt="" onerror="this.style.visibility=\'hidden\'">' +
+          '<div class="info"><b>' + esc(item.nome) + '</b>' +
+          '<div class="det">Estoque: ' + (item.estoque >= 999 ? 'Ilimitado (999)' : item.estoque) + '</div></div>' +
+          '<div style="display:flex;align-items:center;gap:10px">' +
+          '<span class="preco">R$ ' + item.preco_real.toFixed(2) + '</span>' +
+          '<button onclick="editarItem(' + idx + ')" style="background:#0277bd">✏</button>' +
+          '<button onclick="removerItem(' + idx + ')">Remover</button></div>';
+        lista.appendChild(div);
+      });
+    }
+  }
+
+  function removerItem(idx) {
+    if (!confirm('Remover o item "' + itens[idx].nome + '"?')) return;
+    itens.splice(idx, 1);
+    salvarItens();
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  /* Leitura segura: nunca quebra se os dados do localStorage forem corrompidos */
+  function lerLS(chave, padrao) {
+    try {
+      var v = JSON.parse(localStorage.getItem(chave) || padrao);
+      return (Array.isArray(v) === Array.isArray(JSON.parse(padrao))) ? v : JSON.parse(padrao);
+    } catch (e) { return JSON.parse(padrao); }
+  }
+  /* Sanitiza URL de imagem: bloqueia javascript: e esquemas perigosos */
+  function fotoSegura(url) {
+    var u = String(url || '');
+    if (!u) return '';
+    if (/^(https:|data:image\/|blob:)/i.test(u)) return esc(u);
+    return '';
+  }
+
+  /* ---------- Backup / Migração ---------- */
+  var CHAVES_BACKUP = ['zyon_itens', 'zyon_cardapio', 'zyon_pedidos', 'zyon_meus_pedidos', 'zyon_config', 'zyon_admin_hash'];
+
+  function exportarDados() {
+    var dados = { _sistema: 'ZYON', _exportadoEm: new Date().toLocaleString('pt-BR') };
+    CHAVES_BACKUP.forEach(function(k) {
+      var v = localStorage.getItem(k);
+      if (v !== null) dados[k] = v;
+    });
+    var blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'zyon_backup_' + Date.now() + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    alert('✅ Backup baixado!\n\n⚠ O arquivo contém suas chaves SyncPay e hash de senha. Não compartilhe!');
+  }
+
+  function importarDados(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var dados;
+      try { dados = JSON.parse(e.target.result); }
+      catch (err) { alert('⚠ Arquivo inválido!'); return; }
+      if (dados._sistema !== 'ZYON') { alert('⚠ Este arquivo não é um backup do ZYON!'); return; }
+      if (!confirm('Restaurar backup de ' + (dados._exportadoEm || '?') + '?\n\nOs dados atuais serão substituídos!')) return;
+      CHAVES_BACKUP.forEach(function(k) {
+        if (dados[k] !== undefined) localStorage.setItem(k, dados[k]);
+      });
+      alert('✅ Dados restaurados com sucesso! A página vai recarregar.');
+      location.reload();
+    };
+    reader.readAsText(file);
+    input.value = '';
+  }
+
+  carregarConfig();
+  renderizarItens();
+</script>
+</body>
+</html>

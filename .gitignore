@@ -1,0 +1,6 @@
+# Segredos — NUNCA subir pro GitHub
+config.json
+
+# Dados locais
+node_modules/
+.vercel/

@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://api.syncpayments.com.br http://localhost:3000; form-action 'none'; object-src 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>ZYON — Fazer Pedido</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI', Arial, sans-serif; }
+  body { background:#12121a; color:#eee; min-height:100vh; padding-bottom:60px; }
+  header { background:linear-gradient(90deg,#ff5f00,#ffb400); padding:20px; text-align:center; }
+  header h1 { color:#fff; letter-spacing:4px; font-size:1.8rem; text-shadow:2px 2px 4px rgba(0,0,0,.3); }
+  header p { color:rgba(255,255,255,.9); font-size:.85rem; margin-top:4px; }
+  .container { max-width:1000px; margin:0 auto; padding:20px; }
+  .msg { padding:12px 16px; border-radius:8px; margin-bottom:16px; font-weight:600; display:none; }
+  .msg.erro { background:#ffd6d6; color:#a30000; }
+  .msg.ok { background:#d4f5d4; color:#0a6b0a; }
+
+  /* Formulário */
+  .dados { background:#1e1e2a; border-radius:12px; padding:20px; margin-bottom:24px; box-shadow:0 4px 12px rgba(0,0,0,.4); }
+  .dados h2 { color:#ffb400; margin-bottom:14px; font-size:1.1rem; }
+  .dados .row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .dados .campo { flex:1; min-width:200px; display:flex; flex-direction:column; }
+  .dados label { font-size:.8rem; color:#aaa; margin-bottom:5px; }
+  .dados input, .dados select { padding:10px; border-radius:8px; border:1px solid #333; background:#12121a; color:#fff; font-size:1rem; }
+  .dados input:focus, .dados select:focus { outline:2px solid #ff5f00; }
+
+  /* Cardápio */
+  .cardapio h2 { color:#ffb400; margin:10px 0 16px; font-size:1.2rem; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+  .tab { background:#1e1e2a; color:#ccc; border:1px solid #2c2c3a; padding:9px 18px; border-radius:30px; cursor:pointer; font-weight:700; font-size:.88rem; transition:all .15s; }
+  .tab:hover { border-color:#ffb400; color:#fff; }
+  .tab.ativa { background:linear-gradient(90deg,#ff5f00,#ffb400); color:#fff; border-color:transparent; }
+  .titulo-secao { color:#ffb400; font-size:1.05rem; margin:26px 0 12px; padding-left:10px; border-left:4px solid #ff5f00; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; }
+  .card { background:#1e1e2a; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,.4); display:flex; flex-direction:column; }
+  .card .foto { height:160px; background:#2c2c3a; display:flex; align-items:center; justify-content:center; border-bottom:1px solid #2c2c3a; }
+  .card .foto img { max-width:100%; max-height:100%; object-fit:contain; }
+  .card .corpo { padding:14px; display:flex; flex-direction:column; gap:6px; flex:1; }
+  .card .corpo button { margin-top:auto; }
+  .card .nome { font-weight:700; font-size:1.05rem; }
+  .card .preco { color:#4caf50; font-weight:700; font-size:1.1rem; }
+  .card .estoque { color:#888; font-size:.78rem; }
+  .card button { background:linear-gradient(90deg,#ff5f00,#ffb400); color:#fff; border:none; padding:10px; border-radius:8px; font-weight:700; cursor:pointer; transition:transform .1s; }
+  .card button:hover { transform:scale(1.03); }
+  .card.esgotado { opacity:.5; }
+  .card.esgotado button { background:#444; cursor:not-allowed; }
+  .vazio { color:#888; text-align:center; padding:40px 0; grid-column:1/-1; }
+
+  /* Carrinho */
+  .carrinho { background:#1e1e2a; border-radius:12px; padding:20px; margin-bottom:24px; box-shadow:0 4px 12px rgba(0,0,0,.4); display:none; }
+  .carrinho h2 { color:#ffb400; font-size:1.1rem; margin-bottom:12px; }
+  .carrinho .linha { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #2c2c3a; font-size:.92rem; }
+  .carrinho .total { display:flex; justify-content:space-between; padding-top:12px; font-size:1.2rem; font-weight:800; color:#4caf50; }
+  .carrinho button.finalizar { width:100%; margin-top:16px; background:#4caf50; color:#fff; border:none; padding:14px; border-radius:8px; font-size:1.05rem; font-weight:700; cursor:pointer; }
+  .carrinho button.finalizar:disabled { background:#444; cursor:not-allowed; }
+  .carrinho .limpar { width:100%; margin-top:8px; background:none; border:none; color:#ff6b6b; cursor:pointer; font-size:.85rem; }
+
+  /* ====== TELA DE PAGAMENTO ====== */
+  .pagamento { display:none; background:#1e1e2a; border-radius:16px; padding:30px; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,.5); }
+  .pagamento h2 { color:#4caf50; font-size:1.5rem; margin-bottom:10px; }
+  .pagamento .valor { font-size:2.2rem; font-weight:900; color:#4caf50; margin:10px 0; }
+  .pixbox { background:#12121a; border:2px dashed #4caf50; border-radius:12px; padding:18px; margin:18px auto; max-width:420px; }
+  .pixbox .titulo { color:#4caf50; font-weight:800; margin-bottom:10px; }
+  .pixbox .chave { color:#ffb400; font-weight:700; word-break:break-all; font-size:.9rem; }
+  .pixbox .copiacola { color:#ccc; font-size:.78rem; word-break:break-all; margin-top:10px; font-family:monospace; }
+  .botao-copiar { background:#4caf50; color:#fff; border:none; padding:12px 26px; border-radius:8px; font-weight:700; cursor:pointer; margin-top:12px; }
+  .pagamento .resumo { text-align:left; max-width:420px; margin:10px auto; color:#ccc; font-size:.9rem; }
+  .pagamento button.confirmar { width:100%; max-width:420px; margin-top:18px; background:linear-gradient(90deg,#ff5f00,#ffb400); border:none; color:#fff; padding:14px; border-radius:8px; font-size:1.05rem; font-weight:800; cursor:pointer; }
+
+  /* ====== TELA AGUARDANDO ====== */
+  .aguardando { display:none; background:#1e1e2a; border-radius:16px; padding:40px 30px; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,.5); }
+  .aguardando .spinner { width:60px; height:60px; border:6px solid #2c2c3a; border-top-color:#ffb400; border-radius:50%; margin:0 auto 24px; animation:girar 1s linear infinite; }
+  @keyframes girar { to { transform:rotate(360deg); } }
+  .aguardando h2 { color:#ffb400; font-size:1.6rem; margin-bottom:12px; }
+  .aguardando .tempo { font-size:2rem; font-weight:900; color:#4caf50; }
+  .aguardando .itens { text-align:left; max-width:340px; margin:20px auto; color:#ccc; font-size:.9rem; }
+  .aguardando .status { color:#888; font-size:.85rem; margin-top:10px; }
+
+  /* ====== TELA PRONTO (códigos + prints) ====== */
+  .prontotela { display:none; background:#1e1e2a; border-radius:16px; padding:30px; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,.5); }
+  .prontotela h2 { color:#4caf50; font-size:1.6rem; margin-bottom:16px; }
+  .prontotela .instr { color:#ccc; font-size:.92rem; margin-bottom:14px; }
+  .codigo-item { background:#12121a; border:2px solid #ffb400; border-radius:10px; padding:14px; margin:10px auto; max-width:420px; color:#ffb400; font-weight:800; font-size:1rem; word-break:break-word; }
+  .print-img { max-width:100%; border-radius:10px; margin:10px 0; border:2px solid #2c2c3a; }
+  .botao { margin-top:18px; background:linear-gradient(90deg,#ff5f00,#ffb400); border:none; color:#fff; padding:12px 30px; border-radius:8px; font-weight:700; cursor:pointer; }
+
+  /* Meus pedidos */
+  .meuspedidos { background:#1e1e2a; border-radius:12px; padding:20px; margin-top:30px; box-shadow:0 4px 12px rgba(0,0,0,.4); }
+  .meuspedidos h2 { color:#ffb400; font-size:1.1rem; margin-bottom:12px; }
+  .mp-item { background:#12121a; border-radius:10px; padding:14px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .mp-item .det { font-size:.85rem; color:#ccc; }
+  .mp-item .st { font-size:.75rem; font-weight:800; padding:4px 10px; border-radius:20px; }
+  .st.aguardando_pagamento { background:#8d6e00; color:#fff; }
+  .st.pago { background:#00897b; color:#fff; }
+  .st.preparando { background:#0277bd; color:#fff; }
+  .st.pronto { background:#2e7d32; color:#fff; }
+  .st.entregue { background:#555; color:#fff; }
+  .mp-item button { background:#ffb400; color:#12121a; border:none; padding:8px 14px; border-radius:8px; font-weight:800; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>ZYON</h1>
+  <p>🍔 lanches McDonald's pagos com Pix • retire com o código do app</p>
+</header>
+
+<div class="container">
+
+  <div id="msg" class="msg"></div>
+
+  <!-- ================= TELA 1: PEDIDO ================= -->
+  <div id="telaCliente">
+
+    <div class="dados">
+      <h2>📋 Seus dados</h2>
+      <div class="row">
+        <div class="campo">
+          <label>Nome completo *</label>
+          <input type="text" id="nome" placeholder="Ex: João da Silva">
+        </div>
+        <div class="campo">
+          <label>Tipo de pedido *</label>
+          <select id="tipo">
+            <option value="Balcão">Balcão</option>
+            <option value="Drive">Drive</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label>Endereço do restaurante *</label>
+          <input type="text" id="endereco" placeholder="Ex: Av. Brigadeiro Faria Lima, 3600 - São Paulo">
+        </div>
+      </div>
+      <div class="row">
+        <div class="campo">
+          <label>CPF (necessário para o Pix) *</label>
+          <input type="text" id="cpf" placeholder="000.000.000-00" maxlength="14">
+        </div>
+        <div class="campo">
+          <label>E-mail (necessário para o Pix) *</label>
+          <input type="email" id="email" placeholder="voce@email.com">
+        </div>
+        <div class="campo">
+          <label>Telefone (necessário para o Pix) *</label>
+          <input type="text" id="telefone" placeholder="11 99999-8888" maxlength="15">
+        </div>
+      </div>
+    </div>
+
+    <div class="carrinho" id="divCarrinho">
+      <h2>🛒 Seu carrinho</h2>
+      <div id="listaCarrinho"></div>
+      <div class="total"><span>Total</span><span id="totalGeral">R$ 0.00</span></div>
+      <button class="finalizar" id="btnFinalizar" onclick="finalizarPedido()" disabled>✅ Finalizar e Pagar</button>
+      <button class="limpar" onclick="limparCarrinho()">🗑 Esvaziar carrinho</button>
+    </div>
+
+    <div class="cardapio">
+      <h2>🍔 Cardápio</h2>
+      <div class="tabs" id="tabsCategorias"></div>
+      <div id="secoesCardapio"></div>
+    </div>
+
+    <div class="meuspedidos" id="divMeusPedidos" style="display:none">
+      <h2>📦 Meus Pedidos</h2>
+      <div id="listaMeusPedidos"></div>
+    </div>
+  </div>
+
+  <!-- ================= TELA 2: PAGAMENTO PIX ================= -->
+  <div class="pagamento" id="telaPagamento">
+    <h2>💳 Pagamento via Pix</h2>
+    <div class="valor" id="pgValor">R$ 0.00</div>
+    <div class="resumo" id="pgResumo"></div>
+    <div class="pixbox">
+      <div class="titulo">✨ PIX — Copia e Cola (via SyncPay)</div>
+      <div id="pgStatus" style="font-size:.85rem; margin-bottom:10px"></div>
+      <div class="chave" id="pgChave">—</div>
+      <div class="copiacola" id="pgCopiaCola">—</div>
+      <button class="botao-copiar" onclick="copiarPix()">📋 Copiar código Pix</button>
+    </div>
+    <div style="color:#888; font-size:.85rem" id="pgManualInfo">Fallback: se o gateway estiver indisponível, confirme manualmente:</div>
+    <button class="confirmar" id="pgConfirmarManual" onclick="confirmarPagamento()">✅ Já fiz o pagamento</button>
+  </div>
+
+  <!-- ================= TELA 3: AGUARDANDO ================= -->
+  <div class="aguardando" id="telaAguardando">
+    <div class="spinner"></div>
+    <h2>⏳ Aguarde, seu pedido será entregue em</h2>
+    <div class="tempo" id="agTempo">20 minutos</div>
+    <div class="itens" id="agItens"></div>
+    <div class="status">Quando o pedido estiver pronto, os códigos do app McDonald's e os prints aparecerão aqui automaticamente. 😉</div>
+  </div>
+
+  <!-- ================= TELA 4: PRONTO (códigos + prints) ================= -->
+  <div class="prontotela" id="telaPronto">
+    <h2>🎉 Seu pedido está pronto!</h2>
+    <div class="instr">Use os códigos abaixo no app do McDonald's e confira os prints:</div>
+    <div id="prConteudo"></div>
+    <button class="botao" onclick="voltarCliente()">← Fazer novo pedido</button>
+  </div>
+
+</div>
+
+<footer style="text-align:center; padding:30px 20px; color:#777; font-size:.82rem">
+  ZYON © 2026 — Não afiliado ao McDonald's. Marcas pertencem aos seus titulares.<br>
+  <a href="termos.html" style="color:#ffb400; text-decoration:none">Termos de Uso</a> •
+  <a href="termos.html#dados" style="color:#ffb400; text-decoration:none">Privacidade</a> •
+  <a href="termos.html#reembolso" style="color:#ffb400; text-decoration:none">Política de Reembolso</a>
+</footer>
+
+<script>
+  var cardapio = [];
+  var carrinho = {};
+  var pedidoAtual = null;
+  var msgTimer = null;
+
+  /* ---------- Utilidades ---------- */
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  /* Leitura segura do localStorage: nunca quebra se os dados forem corrompidos */
+  function lerLS(chave, padrao) {
+    try {
+      var v = JSON.parse(localStorage.getItem(chave) || padrao);
+      return (Array.isArray(v) === Array.isArray(JSON.parse(padrao))) ? v : JSON.parse(padrao);
+    } catch (e) { return JSON.parse(padrao); }
+  }
+  /* Sanitiza URL de imagem: só aceita http(s), data e blob — bloqueia javascript: */
+  function fotoSegura(url) {
+    var u = String(url || '');
+    if (!u) return '';
+    if (/^(https:|data:image\/|blob:)/i.test(u)) return esc(u);
+    return '';
+  }
+  function mostrarMensagem(texto, tipo) {
+    var m = document.getElementById('msg');
+    m.textContent = texto;
+    m.className = 'msg ' + tipo;
+    m.style.display = 'block';
+    clearTimeout(msgTimer);
+    msgTimer = setTimeout(function(){ m.style.display = 'none'; }, 5000);
+  }
+
+  /* Cardápio (com fotos e categorias) */
+  var CATEGORIAS = [
+    { id: 'Lanches', nome: '🍔 Lanches' },
+    { id: 'Acompanhamentos', nome: '🍟 Acompanhamentos' },
+    { id: 'Combos', nome: '🥤 Combos' },
+    { id: 'Sobremesas', nome: '🍨 Sobremesas' }
+  ];
+  var catAtiva = 'Todos';
+
+  function renderizarCardapio() {
+    cardapio = lerLS('zyon_cardapio', '[]');
+    var tabs = document.getElementById('tabsCategorias');
+    var secoes = document.getElementById('secoesCardapio');
+    tabs.innerHTML = '';
+    secoes.innerHTML = '';
+
+    if (cardapio.length === 0) {
+      secoes.innerHTML = '<div class="vazio">🍽 Nenhum item cadastrado ainda.<br>Peça ao administrador para cadastrar os lanches em <b>admin_itens.html</b>.</div>';
+      return;
+    }
+
+    /* Abas de categoria */
+    var catsPresentes = ['Todos'];
+    CATEGORIAS.forEach(function(c) {
+      if (cardapio.some(function(i){ return (i.categoria || 'Lanches') === c.id; })) catsPresentes.push(c.id);
+    });
+    catsPresentes.forEach(function(cid) {
+      var cat = CATEGORIAS.find(function(c){ return c.id === cid; });
+      var btn = document.createElement('button');
+      btn.className = 'tab' + (catAtiva === cid ? ' ativa' : '');
+      btn.textContent = cat ? cat.nome : '⭐ Todos';
+      btn.onclick = function(){ catAtiva = cid; renderizarCardapio(); };
+      tabs.appendChild(btn);
+    });
+
+    /* Seções */
+    if (catAtiva === 'Todos') {
+      CATEGORIAS.forEach(function(cat) {
+        var doGrupo = cardapio.filter(function(i){ return (i.categoria || 'Lanches') === cat.id; });
+        if (doGrupo.length) secoes.appendChild(criarSecao(cat.nome, doGrupo));
+      });
+      var semCat = cardapio.filter(function(i){ return !i.categoria; });
+      if (semCat.length) secoes.appendChild(criarSecao('⭐ Destaques', semCat));
+    } else {
+      var cat = CATEGORIAS.find(function(c){ return c.id === catAtiva; });
+      var doGrupo = cardapio.filter(function(i){ return (i.categoria || 'Lanches') === catAtiva; });
+      if (doGrupo.length) secoes.appendChild(criarSecao(cat.nome, doGrupo));
+    }
+  }
+
+  function criarSecao(titulo, listaItens) {
+    var sec = document.createElement('div');
+    var h = document.createElement('h3');
+    h.className = 'titulo-secao';
+    h.textContent = titulo;
+    sec.appendChild(h);
+    var grid = document.createElement('div');
+    grid.className = 'grid';
+    listaItens.forEach(function(item) { grid.appendChild(criarCard(item)); });
+    sec.appendChild(grid);
+    return sec;
+  }
+
+  function criarCard(item) {
+    var esgotado = item.estoque <= 0;
+    var idSeguro = esc(item.id);
+    var div = document.createElement('div');
+    div.className = 'card' + (esgotado ? ' esgotado' : '');
+    div.innerHTML =
+      '<div class="foto"><img src="' + fotoSegura(item.foto) + '" alt="' + esc(item.nome) + '" onerror="this.style.display=\'none\'; this.parentElement.insertAdjacentHTML(\'beforeend\',\'<span style=&quot;font-size:48px&quot;>🍔</span>\')"></div>' +
+      '<div class="corpo">' +
+      '<div class="nome">' + esc(item.nome) + '</div>' +
+      '<div class="preco">R$ ' + item.preco_real.toFixed(2) + '</div>' +
+      '<div class="estoque">' + (item.estoque >= 999 ? 'Estoque ilimitado' : 'Estoque: ' + item.estoque) + '</div>' +
+      '<button ' + (esgotado ? 'disabled' : '') + ' onclick="adicionarCarrinho(\'' + idSeguro + '\')">' +
+      (esgotado ? 'Esgotado' : '+ Adicionar') + '</button></div>';
+    return div;
+  }
+
+  /* ---------- Carrinho ---------- */
+  var QTD_MAXIMA = 30;   /* proteção contra pedidos absurdos por erro/abuso */
+
+  function adicionarCarrinho(itemId) {
+    itemId = esc(itemId);
+    var item = cardapio.find(function(i){ return i.id === itemId; });
+    if (!item) return;
+    var qtdAtual = carrinho[itemId] || 0;
+    if (qtdAtual + 1 > QTD_MAXIMA) {
+      mostrarMensagem('⚠ Quantidade máxima de ' + QTD_MAXIMA + ' por item!', 'erro');
+      return;
+    }
+    var qtdAtual = carrinho[itemId] || 0;
+    if (item.estoque < 999 && qtdAtual + 1 > item.estoque) {
+      mostrarMensagem('⚠ Estoque insuficiente para "' + item.nome + '"!', 'erro');
+      return;
+    }
+    carrinho[itemId] = qtdAtual + 1;
+    atualizarCarrinho();
+  }
+
+  function removerCarrinho(itemId) {
+    if (carrinho[itemId]) {
+      carrinho[itemId]--;
+      if (carrinho[itemId] <= 0) delete carrinho[itemId];
+      atualizarCarrinho();
+    }
+  }
+
+  function limparCarrinho() { carrinho = {}; atualizarCarrinho(); }
+
+  function atualizarCarrinho() {
+    var div = document.getElementById('divCarrinho');
+    var lista = document.getElementById('listaCarrinho');
+    var total = 0, totalUnidades = 0, html = '';
+    for (var id in carrinho) {
+      var item = cardapio.find(function(i){ return i.id === id; });
+      if (!item) continue;
+      var subtotal = item.preco_real * carrinho[id];
+      total += subtotal;
+      totalUnidades += carrinho[id];
+      html += '<div class="linha"><span>' + esc(item.nome) + ' × ' + carrinho[id] + '</span>' +
+              '<span><b>R$ ' + subtotal.toFixed(2) + '</b> ' +
+              '<button onclick="removerCarrinho(\'' + id + '\')" style="background:none;border:none;color:#ff6b6b;cursor:pointer;margin-left:6px">✖</button></span></div>';
+    }
+    lista.innerHTML = html;
+    document.getElementById('totalGeral').textContent = 'R$ ' + total.toFixed(2);
+    document.getElementById('btnFinalizar').disabled = (totalUnidades === 0);
+    div.style.display = (totalUnidades > 0) ? 'block' : 'none';
+  }
+
+  function calcularTempo(totalItens) {
+    if (totalItens <= 3) return 15;
+    if (totalItens <= 7) return 25;
+    return 40;
+  }
+
+  /* ---------- Checkout -> vai para Pagamento ---------- */
+  function finalizarPedido() {
+    var totalUnidades = 0;
+    for (var id in carrinho) totalUnidades += carrinho[id];
+    if (totalUnidades === 0) { mostrarMensagem('⚠ Seu carrinho está vazio!', 'erro'); return; }
+
+    var nome = document.getElementById('nome').value.trim();
+    var endereco = document.getElementById('endereco').value.trim();
+    var tipo = document.getElementById('tipo').value;
+    var cpf = document.getElementById('cpf').value.replace(/\D/g, '');
+    var email = document.getElementById('email').value.trim();
+    var telefone = document.getElementById('telefone').value.replace(/\D/g, '');
+    if (!nome) { mostrarMensagem('⚠ Digite seu nome completo!', 'erro'); return; }
+    if (!endereco) { mostrarMensagem('⚠ Digite o endereço do restaurante!', 'erro'); return; }
+    if (cpf.length !== 11) { mostrarMensagem('⚠ Digite um CPF válido (11 dígitos)!', 'erro'); return; }
+    if (!email || !email.includes('@')) { mostrarMensagem('⚠ Digite um e-mail válido!', 'erro'); return; }
+    if (telefone.length < 10) { mostrarMensagem('⚠ Digite um telefone válido!', 'erro'); return; }
+
+    var total = 0, itensNomeados = [];
+    for (var id2 in carrinho) {
+      var it = cardapio.find(function(i){ return i.id === id2; });
+      if (!it) continue;
+      total += it.preco_real * carrinho[id2];
+      itensNomeados.push({ nome: it.nome, qtd: carrinho[id2], preco: it.preco_real });
+    }
+
+    pedidoAtual = {
+      id: 'ped_' + Date.now(),
+      cliente: nome,
+      endereco: endereco,
+      tipo: tipo,
+      cpf: cpf,
+      email: email,
+      telefone: telefone,
+      itens: itensNomeados,
+      total: total,
+      status: 'aguardando_pagamento',   /* passa a pago só quando a SyncPay confirmar */
+      tempoEspera: calcularTempo(totalUnidades),
+      codigoRetirada: null,             /* NÃO é mais mostrado ao cliente */
+      codigosApp: null,                 /* códigos do app McDonald's (admin digita) */
+      printApp: null,                   /* print do app McDonald's (admin anexa) */
+      syncIdentifier: null,             /* id da transação na SyncPay */
+      criadoEm: new Date().toLocaleString('pt-BR')
+    };
+
+    carrinho = {};
+    atualizarCarrinho();
+    mostrarTelaPagamento();
+  }
+
+  /* ============================================================
+     PAGAMENTO VIA SYNCPAY (através do servidor proxy — servidor.js)
+     O navegador não pode falar direto com a SyncPay (CORS/IP).
+     Fluxo: POST /api/pix/criar -> GET /api/pix/status/:id (10s)
+     Sem servidor rodando? Cai no fallback Pix manual.
+     ============================================================ */
+  var API = (location.protocol === 'file:') ? 'http://localhost:3000/api' : '/api';
+  var pollTimer = null;
+
+  async function mostrarTelaPagamento() {
+    document.getElementById('telaCliente').style.display = 'none';
+    document.getElementById('telaPagamento').style.display = 'block';
+
+    document.getElementById('pgValor').textContent = 'R$ ' + pedidoAtual.total.toFixed(2);
+    document.getElementById('pgResumo').innerHTML = '<b>Itens:</b> ' +
+      pedidoAtual.itens.map(function(i){ return esc(i.nome) + ' × ' + i.qtd; }).join(', ');
+
+    try {
+      document.getElementById('pgStatus').textContent = '⏳ Gerando seu Pix na SyncPay…';
+
+      var r = await fetch(API + '/pix/criar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: pedidoAtual.total,
+          description: 'ZYON - Pedido ' + pedidoAtual.id,
+          client: {
+            name: pedidoAtual.cliente,
+            document: pedidoAtual.cpf,
+            email: pedidoAtual.email,
+            phone: pedidoAtual.telefone
+          }
+        })
+      });
+      var d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'HTTP ' + r.status);
+      pedidoAtual.syncIdentifier = d.identifier;
+      pedidoAtual.pixCode = d.pix_code;
+
+      document.getElementById('pgChave').textContent = 'Pix Copia e Cola — SyncPay';
+      document.getElementById('pgCopiaCola').textContent = d.pix_code;
+      document.getElementById('pgStatus').textContent = '✅ Pix gerado! A confirmação é AUTOMÁTICA quando o pagamento for aprovado.';
+      document.getElementById('pgConfirmarManual').style.display = 'none';
+      document.getElementById('pgManualInfo').style.display = 'none';
+
+      /* inicia consulta automática de status */
+      iniciarPollingSync();
+    } catch (e) {
+      /* Servidor fora do ar ou SyncPay não configurada -> fallback manual */
+      var config = lerLS('zyon_config', '{}');
+      document.getElementById('pgStatus').textContent = '⚠ Pagamento automático indisponível (' + e.message + '). Use o Pix manual abaixo.';
+      document.getElementById('pgChave').textContent = config.chavePix ? 'Chave: ' + config.chavePix : '⚠ Admin não configurou o pagamento!';
+      document.getElementById('pgCopiaCola').textContent = config.chavePix ? gerarPixManual(config.chavePix, config.nomePix || 'ZYON', config.cidadePix || 'SAO PAULO', pedidoAtual.total, pedidoAtual.id) : '';
+      document.getElementById('pgConfirmarManual').style.display = 'block';
+    }
+  }
+
+  async function consultarStatusSync() {
+    if (!pedidoAtual || !pedidoAtual.syncIdentifier) return false;
+    try {
+      var r = await fetch(API + '/pix/status/' + pedidoAtual.syncIdentifier);
+      if (!r.ok) return false;
+      var d = await r.json();
+      return !!d.pago;
+    } catch (e) { return false; }
+  }
+
+  function iniciarPollingSync() {
+    clearInterval(pollTimer);
+    var tentativas = 0;
+    pollTimer = setInterval(async function() {
+      tentativas++;
+      var pago = await consultarStatusSync();
+      if (pago) {
+        clearInterval(pollTimer);
+        pagarAprovado(true);
+      } else if (tentativas > 180) {   /* ~30 min de consulta */
+        clearInterval(pollTimer);
+        document.getElementById('pgStatus').textContent = '⏰ Tempo esgotado. Se já pagou, clique no botão manual abaixo.';
+        document.getElementById('pgConfirmarManual').style.display = 'block';
+      }
+    }, 10000);
+  }
+
+  /* Pagamento confirmado -> vira "pago" -> tela aguardando (sem código) */
+  function pagarAprovado(automatico) {
+    if (!pedidoAtual || pedidoAtual.status === 'pago') return;
+    pedidoAtual.status = 'pago';
+
+    var pedidos = lerLS('zyon_pedidos', '[]');
+    pedidos.unshift(pedidoAtual);
+    localStorage.setItem('zyon_pedidos', JSON.stringify(pedidos));
+
+    /* registra nos "meus pedidos" deste navegador */
+    var meus = lerLS('zyon_meus_pedidos', '[]');
+    meus.unshift(pedidoAtual.id);
+    meus = meus.slice(0, 20);
+    localStorage.setItem('zyon_meus_pedidos', JSON.stringify(meus));
+
+    clearInterval(pollTimer);
+    document.getElementById('telaPagamento').style.display = 'none';
+    document.getElementById('telaAguardando').style.display = 'block';
+    document.getElementById('agTempo').textContent = pedidoAtual.tempoEspera + ' minutos';
+    document.getElementById('agItens').innerHTML = '<b>Itens:</b> ' +
+      pedidoAtual.itens.map(function(i){ return esc(i.nome) + ' × ' + i.qtd; }).join(', ') +
+      (automatico ? '<div style="color:#4caf50; margin-top:6px">✅ Pagamento aprovado automaticamente pela SyncPay</div>' : '');
+  }
+
+  /* Fallback manual (se o gateway falhar ou não estiver configurado) */
+  function confirmarPagamento() {
+    if (!pedidoAtual) return;
+    if (!confirm('Confirma que o pagamento de R$ ' + pedidoAtual.total.toFixed(2) + ' foi feito?')) return;
+    pagarAprovado(false);
+  }
+
+  function copiarPix() {
+    var txt = document.getElementById('pgCopiaCola').textContent;
+    if (!txt) { mostrarMensagem('⚠ Sem código Pix disponível!', 'erro'); return; }
+    navigator.clipboard.writeText(txt).then(function(){
+      mostrarMensagem('✅ Código Pix copiado! Cole no seu banco e faça o pagamento.', 'ok');
+    }).catch(function(){
+      var ta = document.createElement('textarea');
+      ta.value = txt; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+      mostrarMensagem('✅ Código Pix copiado!', 'ok');
+    });
+  }
+
+  /* ---------- PIX manual (copia e cola local) ---------- */
+  function crc16(str) {
+    var crc = 0xFFFF;
+    for (var c = 0; c < str.length; c++) {
+      crc ^= str.charCodeAt(c) << 8;
+      for (var i = 0; i < 8; i++) {
+        crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+        crc &= 0xFFFF;
+      }
+    }
+    return crc.toString(16).toUpperCase().padStart(4, '0');
+  }
+  function campoPix(id, valor) {
+    return id + String(valor.length).padStart(2, '0') + valor;
+  }
+  function gerarPixManual(chave, nome, cidade, valor, txid) {
+    var gui = campoPix('00', 'br.gov.bcb.pix') + campoPix('01', chave);
+    var payload =
+      campoPix('00', '01') +
+      campoPix('26', gui) +
+      campoPix('52', '0000') +
+      campoPix('53', '986') +
+      campoPix('54', valor.toFixed(2)) +
+      campoPix('58', 'BR') +
+      campoPix('59', nome.substring(0, 25)) +
+      campoPix('60', cidade.substring(0, 15)) +
+      campoPix('62', campoPix('05', txid.substring(0, 25))) +
+      '6304';
+    return payload + crc16(payload);
+  }
+
+  /* ---------- Tela "Pronto": códigos do app + prints ---------- */
+  function mostrarTelaPronto(p) {
+    document.getElementById('telaAguardando').style.display = 'none';
+    document.getElementById('telaCliente').style.display = 'none';
+    document.getElementById('telaPronto').style.display = 'block';
+
+    var html = '';
+    if (p.codigosApp) {
+      p.codigosApp.forEach(function(c, i) {
+        html += '<div class="codigo-item">🔑 Código ' + (i + 1) + ': ' + esc(c) + '</div>';
+      });
+    }
+    if (p.printApp) {
+      html += '<img class="print-img" src="' + fotoSegura(p.printApp) + '" alt="Print do pedido no app McDonald\'s">';
+    }
+    if (!html) html = '<div class="instr">Aguardando o administrador enviar os códigos…</div>';
+    html += '<div class="instr" style="margin-top:14px">💰 Total pago: <b style="color:#4caf50">R$ ' + p.total.toFixed(2) + '</b></div>';
+    document.getElementById('prConteudo').innerHTML = html;
+  }
+
+  function voltarCliente() {
+    ['telaPagamento','telaAguardando','telaPronto'].forEach(function(id){
+      document.getElementById(id).style.display = 'none';
+    });
+    document.getElementById('telaCliente').style.display = 'block';
+    renderizarCardapio();
+    renderizarMeusPedidos();
+  }
+
+  /* ---------- Meus Pedidos (acompanhamento) ---------- */
+  function renderizarMeusPedidos() {
+    var meus = lerLS('zyon_meus_pedidos', '[]');
+    var div = document.getElementById('divMeusPedidos');
+    var lista = document.getElementById('listaMeusPedidos');
+    if (meus.length === 0) { div.style.display = 'none'; return; }
+    div.style.display = 'block';
+    var pedidos = lerLS('zyon_pedidos', '[]');
+    lista.innerHTML = '';
+    meus.forEach(function(pid) {
+      var p = pedidos.find(function(x){ return x.id === pid; });
+      if (!p) return;
+      var st = p.status;
+      var stTxt = { aguardando_pagamento:'⏳ Aguardando pagamento', pago:'💰 Pago — aguardando', preparando:'👨‍🍳 Preparando', pronto:'✅ Pronto!', entregue:'📦 Entregue' }[st] || st;
+      var item = document.createElement('div');
+      item.className = 'mp-item';
+      item.innerHTML =
+        '<div class="det"><b>' + p.itens.map(function(i){ return esc(i.nome) + ' × ' + i.qtd; }).join(', ') + '</b><br>' +
+        'R$ ' + p.total.toFixed(2) + ' • ' + esc(p.criadoEm || '') + '</div>' +
+        '<span class="st ' + st + '">' + stTxt + '</span>' +
+        (st === 'pronto' ? '<button onclick="verPronto(\'' + p.id + '\')">Ver códigos 📱</button>' : '');
+      lista.appendChild(item);
+    });
+  }
+
+  function verPronto(pid) {
+    var pedidos = lerLS('zyon_pedidos', '[]');
+    var p = pedidos.find(function(x){ return x.id === pid; });
+    if (p) mostrarTelaPronto(p);
+  }
+
+  /* ---------- Sincronização em tempo real entre abas ---------- */
+  window.addEventListener('storage', function(e) {
+    if (e.key === 'zyon_pedidos' && pedidoAtual) {
+      var pedidos = lerLS('zyon_pedidos', '[]');
+      var atualizado = pedidos.find(function(x){ return x.id === pedidoAtual.id; });
+      if (atualizado && atualizado.status !== pedidoAtual.status) {
+        pedidoAtual = atualizado;
+        if (atualizado.status === 'preparando') {
+          /* segue na tela aguardando, só atualiza o texto */
+          document.getElementById('agTempo').textContent = pedidoAtual.tempoEspera + ' minutos';
+        }
+        if (atualizado.status === 'pronto') mostrarTelaPronto(atualizado);
+        if (atualizado.status === 'entregue' && document.getElementById('telaPronto').style.display === 'block') {
+          voltarCliente();
+        }
+      }
+    }
+    if (e.key === 'zyon_cardapio') renderizarCardapio();
+    renderizarMeusPedidos();
+  });
+
+  /* ---------- Inicialização ---------- */
+  renderizarCardapio();
+  renderizarMeusPedidos();
+</script>
+</body>
+</html>

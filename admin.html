@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'none'; form-action 'none'; object-src 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>ZYON Admin — Painel de Pedidos</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI', Arial, sans-serif; }
+  body { background:#12121a; color:#eee; min-height:100vh; padding-bottom:60px; }
+  header { background:linear-gradient(90deg,#c62828,#ff5f00); padding:20px; text-align:center; }
+  header h1 { color:#fff; letter-spacing:3px; font-size:1.5rem; }
+  header p { color:rgba(255,255,255,.85); font-size:.8rem; margin-top:4px; }
+  .container { max-width:1200px; margin:0 auto; padding:20px; overflow-x:auto; }
+  nav { margin-bottom:20px; text-align:center; }
+  nav a { color:#ffb400; text-decoration:none; margin:0 12px; font-weight:700; font-size:.9rem; }
+  nav a:hover { text-decoration:underline; }
+  table { width:100%; border-collapse:collapse; background:#1e1e2a; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,.4); }
+  th { background:#2c2c3a; color:#ffb400; padding:12px 10px; text-align:left; font-size:.78rem; text-transform:uppercase; letter-spacing:.5px; }
+  td { padding:12px 10px; border-top:1px solid #2c2c3a; font-size:.86rem; vertical-align:top; }
+  .badge { display:inline-block; padding:4px 10px; border-radius:20px; font-size:.72rem; font-weight:800; white-space:nowrap; }
+  .badge.aguardando_pagamento { background:#8d6e00; color:#fff; }
+  .badge.pago { background:#00897b; color:#fff; }
+  .badge.preparando { background:#0277bd; color:#fff; }
+  .badge.pronto { background:#2e7d32; color:#fff; }
+  .badge.entregue { background:#555; color:#fff; }
+  .acoes button { border:none; padding:6px 10px; border-radius:6px; cursor:pointer; font-weight:700; font-size:.76rem; margin:2px; white-space:nowrap; }
+  .btn-pago { background:#00897b; color:#fff; }
+  .btn-preparar { background:#0277bd; color:#fff; }
+  .btn-codigos { background:#2e7d32; color:#fff; }
+  .btn-remover { background:#8b0000; color:#fff; }
+  .tempo { color:#888; font-size:.76rem; }
+  .vazio { color:#888; text-align:center; padding:40px; }
+  .aviso { background:#1e1e2a; border-left:4px solid #ffb400; padding:12px 16px; border-radius:8px; margin-bottom:16px; font-size:.83rem; color:#ccc; }
+
+  /* Modal de códigos e print */
+  .modal-fundo { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:10; align-items:center; justify-content:center; padding:20px; }
+  .modal { background:#1e1e2a; border-radius:14px; padding:24px; max-width:520px; width:100%; max-height:90vh; overflow-y:auto; }
+  .modal h2 { color:#ffb400; font-size:1.15rem; margin-bottom:6px; }
+  .modal .sub { color:#999; font-size:.82rem; margin-bottom:14px; }
+  .modal .campo { margin-bottom:14px; }
+  .modal label { display:block; font-size:.8rem; color:#aaa; margin-bottom:5px; }
+  .modal textarea { width:100%; background:#12121a; color:#fff; border:1px solid #333; border-radius:8px; padding:10px; font-size:.95rem; min-height:90px; resize:vertical; font-family:monospace; }
+  .modal input[type=file] { background:#12121a; color:#aaa; border:1px solid #333; border-radius:8px; padding:10px; width:100%; }
+  .modal img { width:100%; border-radius:8px; margin-top:8px; border:2px solid #2c2c3a; }
+  .modal .botoes { display:flex; gap:10px; margin-top:16px; }
+  .modal .botoes button { flex:1; padding:12px; border:none; border-radius:8px; font-weight:800; cursor:pointer; }
+  .b-salvar { background:linear-gradient(90deg,#ff5f00,#ffb400); color:#fff; }
+  .b-cancelar { background:#444; color:#fff; }
+</style>
+</head>
+<body>
+
+<!-- ====== TRAVA DE SEGURANÇA DO ADMIN ====== -->
+<div id="telaLogin" style="position:fixed; inset:0; background:#12121a; z-index:9999; display:flex; align-items:center; justify-content:center; padding:20px;">
+  <div style="background:#1e1e2a; padding:30px; border-radius:14px; max-width:380px; width:100%; text-align:center; box-shadow:0 10px 40px rgba(0,0,0,.6)">
+    <h2 style="color:#ffb400; margin-bottom:6px">🔒 Área Restrita</h2>
+    <p id="loginMsg" style="color:#999; font-size:.85rem; margin-bottom:14px">Digite a senha do administrador para acessar</p>
+    <input type="password" id="senhaAdmin" autocomplete="off" style="width:100%; padding:12px; border-radius:8px; border:1px solid #333; background:#12121a; color:#fff; font-size:1rem; text-align:center" placeholder="Senha">
+    <button id="btnEntrar" style="width:100%; margin-top:12px; background:linear-gradient(90deg,#ff5f00,#ffb400); border:none; color:#fff; padding:12px; border-radius:8px; font-weight:800; cursor:pointer">Entrar</button>
+  </div>
+</div>
+<script>
+  /* ============================================================
+     GUARDA DE SEGURANÇA — autenticação do admin
+     - Senha guardada como hash SHA-256 (nunca em texto puro)
+     - Bloqueio progressivo após tentativas erradas
+     - Sessão expira após 30 min de inatividade
+     ============================================================ */
+  var GUARDA = (function() {
+    var HASH_KEY = 'zyon_admin_hash';
+    var TENT_KEY = 'zyon_admin_tentativas';
+    var LOCK_KEY = 'zyon_admin_bloqueio_ate';
+    var SESS_KEY = 'zyon_admin_sessao';
+
+    async function sha256(txt) {
+      var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+      return Array.from(new Uint8Array(buf)).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+    }
+
+    function bloqueadoAte() {
+      return parseInt(localStorage.getItem(LOCK_KEY) || '0', 10);
+    }
+    function estaBloqueado() {
+      return Date.now() < bloqueadoAte();
+    }
+    function segundosRestantes() {
+      return Math.ceil((bloqueadoAte() - Date.now()) / 1000);
+    }
+    function sessaoValida() {
+      var s = JSON.parse(sessionStorage.getItem(SESS_KEY) || 'null');
+      if (!s) return false;
+      if (Date.now() - s.ts > 30 * 60 * 1000) { sessionStorage.removeItem(SESS_KEY); return false; }
+      s.ts = Date.now();
+      sessionStorage.setItem(SESS_KEY, JSON.stringify(s));
+      return true;
+    }
+
+    async function tentarEntrar(senha) {
+      if (estaBloqueado()) return { ok:false, msg:'🔒 Bloqueado por ' + segundosRestantes() + 's (tentativas demais)' };
+      if (typeof senha !== 'string' || senha.length > 128) return { ok:false, msg:'⚠ Senha inválida' };
+
+      var hashSalvo = localStorage.getItem(HASH_KEY);
+      var hash = await sha256(senha + '|zyon');
+
+      /* Primeiro acesso: CRIA a senha */
+      if (!hashSalvo) {
+        if (senha.length < 8) return { ok:false, msg:'⚠ Crie uma senha com pelo menos 8 caracteres!' };
+        localStorage.setItem(HASH_KEY, hash);
+        abrirSessao();
+        return { ok:true, msg:'✅ Senha criada! Guarde-a bem — é ela que protege o painel.' };
+      }
+
+      if (hash !== hashSalvo) {
+        var tent = parseInt(localStorage.getItem(TENT_KEY) || '0', 10) + 1;
+        localStorage.setItem(TENT_KEY, String(tent));
+        if (tent >= 5) {
+          var segundos = 30 * Math.pow(2, tent - 5);   /* 30s, 1min, 2min, 4min... */
+          localStorage.setItem(LOCK_KEY, String(Date.now() + segundos * 1000));
+          return { ok:false, msg:'🔒 ' + tent + ' tentativas erradas. Bloqueado por ' + segundos + 's!' };
+        }
+        return { ok:false, msg:'⚠ Senha incorreta (' + tent + '/5 tentativas)' };
+      }
+
+      localStorage.setItem(TENT_KEY, '0');
+      abrirSessao();
+      return { ok:true, msg:'' };
+    }
+
+    function abrirSessao() {
+      sessionStorage.setItem(SESS_KEY, JSON.stringify({ ts: Date.now(), tk: Math.random().toString(36).slice(2) }));
+    }
+
+    return {
+      init: async function() {
+        var overlay = document.getElementById('telaLogin');
+        var inp = document.getElementById('senhaAdmin');
+        var btn = document.getElementById('btnEntrar');
+        var msg = document.getElementById('loginMsg');
+
+        async function verificar() {
+          var r = await tentarEntrar(inp.value);
+          msg.textContent = r.msg || 'Acesso liberado!';
+          msg.style.color = r.ok ? '#4caf50' : '#ff6b6b';
+          if (r.ok) {
+            overlay.style.display = 'none';
+            inp.value = '';
+            inp.removeEventListener('keydown', onEnter);
+          } else {
+            inp.value = '';
+            inp.focus();
+          }
+        }
+        function onEnter(e) { if (e.key === 'Enter') verificar(); }
+
+        if (sessaoValida()) { overlay.style.display = 'none'; return; }
+        if (!localStorage.getItem(HASH_KEY)) {
+          msg.textContent = 'Primeiro acesso: crie a senha do administrador (mín. 8 caracteres)';
+          msg.style.color = '#ffb400';
+        }
+        if (estaBloqueado()) {
+          msg.textContent = '🔒 Bloqueado por ' + segundosRestantes() + 's';
+          msg.style.color = '#ff6b6b';
+        }
+        btn.addEventListener('click', verificar);
+        inp.addEventListener('keydown', onEnter);
+        inp.focus();
+
+        /* Expiração por inatividade: re-trava a página após 30 min */
+        setInterval(function() {
+          if (!sessaoValida() && overlay.style.display === 'none') location.reload();
+        }, 60000);
+      }
+    };
+  })();
+  GUARDA.init();
+</script>
+<!-- ====== FIM DA TRAVA ====== -->
+
+<header>
+  <h1>ZYON ADMIN — Central de Pedidos</h1>
+  <p>Confirme pagamentos, prepara o pedido e envie códigos + prints do app McDonald's</p>
+</header>
+
+<div class="container">
+  <nav>
+    <a href="index.html">🏪 Site do Cliente</a>
+    <a href="admin.html">📊 Painel de Pedidos</a>
+    <a href="admin_itens.html">🍔 Cadastro de Itens</a>
+  </nav>
+
+  <div style="text-align:center; margin-bottom:16px">
+    <button onclick="exportarDados()" style="background:#0277bd; color:#fff; border:none; padding:9px 18px; border-radius:8px; font-weight:700; cursor:pointer; font-size:.85rem">📤 Exportar backup (itens + pedidos)</button>
+    <button onclick="document.getElementById('importFile').click()" style="background:#444; color:#fff; border:none; padding:9px 18px; border-radius:8px; font-weight:700; cursor:pointer; font-size:.85rem">📥 Importar</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importarDados(this)">
+  </div>
+
+  <div class="aviso">
+    📌 <b>Fluxo:</b> 1) Cliente pede e paga no Pix → pedido entra como <b>Aguardando pagamento</b> → você confirma o recebimento (<b>Pago</b>). 2) Clique <b>Preparar</b> para iniciar a preparação. 3) Quando estiver pronto, clique <b>Códigos/Print</b>: digite os códigos do app McDonald's e anexe o print — o cliente recebe automaticamente na tela dele.
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Cliente</th>
+        <th>Restaurante</th>
+        <th>Tipo</th>
+        <th>Itens</th>
+        <th>Valor (R$)</th>
+        <th>Status</th>
+        <th>Ação</th>
+      </tr>
+    </thead>
+    <tbody id="tabelaPedidos"></tbody>
+  </table>
+</div>
+
+<footer style="text-align:center; padding:30px 20px; color:#777; font-size:.82rem">
+  ZYON © 2026 — Não afiliado ao McDonald's. Marcas pertencem aos seus titulares.<br>
+  <a href="termos.html" style="color:#ffb400; text-decoration:none">Termos de Uso</a> •
+  <a href="termos.html#dados" style="color:#ffb400; text-decoration:none">Privacidade</a> •
+  <a href="termos.html#reembolso" style="color:#ffb400; text-decoration:none">Política de Reembolso</a>
+</footer>
+
+<!-- Modal: códigos do app + print -->
+<div class="modal-fundo" id="modalFundo" onclick="if(event.target===this) fecharModal()">
+  <div class="modal">
+    <h2>📱 Códigos do App McDonald's + Print</h2>
+    <div class="sub" id="modalInfo"></div>
+    <div class="campo">
+      <label>Códigos do app McDonald's (um por linha)</label>
+      <textarea id="mCodigos" placeholder="Ex:&#10;CODE-A1B2C3&#10;CODE-D4E5F6"></textarea>
+    </div>
+    <div class="campo">
+      <label>📸 Print do pedido no app (upload)</label>
+      <input type="file" id="mPrint" accept="image/*" onchange="previewPrint(this)">
+    </div>
+    <img id="mPreview" style="display:none" alt="">
+    <div class="botoes">
+      <button class="b-cancelar" onclick="fecharModal()">Cancelar</button>
+      <button class="b-salvar" onclick="salvarCodigos()">✅ Salvar e marcar como PRONTO</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var pedidos = lerLS('zyon_pedidos', '[]');
+  var idxModal = null;
+  var printBase64 = null;
+
+  function renderizarPedidos() {
+    pedidos = JSON.parse(localStorage.getItem('zyon_pedidos') || '[]');
+    var tbody = document.getElementById('tabelaPedidos');
+    tbody.innerHTML = '';
+
+    if (pedidos.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="vazio">📭 Nenhum pedido recebido ainda.<br>Os pedidos pagos pelo cliente aparecem aqui automaticamente.</div></td></tr>';
+      return;
+    }
+
+    pedidos.forEach(function(p, idx) {
+      var itensTxt = p.itens.map(function(i){ return esc(i.nome) + ' × ' + i.qtd; }).join(' | ');
+      var acoes = '';
+
+      if (p.status === 'aguardando_pagamento') {
+        acoes += '<button class="btn-pago" onclick="confirmarPagamento(' + idx + ')">💰 Confirmar Pago</button> ';
+      }
+      if (p.status === 'pago') {
+        acoes += '<button class="btn-preparar" onclick="marcarPreparar(' + idx + ')">👨‍🍳 Preparar</button> ';
+      }
+      if (p.status === 'preparando' || p.status === 'pago') {
+        acoes += '<button class="btn-codigos" onclick="abrirModalCodigos(' + idx + ')">📱 Códigos/Print</button> ';
+      }
+      if (p.status === 'pronto') {
+        acoes += '<button class="btn-codigos" onclick="abrirModalCodigos(' + idx + ')">✏ Editar códigos</button> ';
+        acoes += '<button class="btn-preparar" onclick="marcarEntregue(' + idx + ')">📦 Entregue</button> ';
+      }
+      acoes += '<button class="btn-remover" onclick="removerPedido(' + idx + ')">Remover</button>';
+
+      var codigosTxt = '';
+      if (p.codigosApp && p.codigosApp.length) {
+        codigosTxt = '<div class="tempo" style="color:#ffb400; margin-top:4px">🔑 ' + p.codigosApp.length + ' código(s) enviados</div>';
+      }
+
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(p.id) + '<div class="tempo">' + esc(p.criadoEm || '') + '</div></td>' +
+        '<td><b>' + esc(p.cliente) + '</b></td>' +
+        '<td>' + esc(p.endereco) + '</td>' +
+        '<td>' + esc(p.tipo) + '</td>' +
+        '<td>' + itensTxt + '</td>' +
+        '<td><b style="color:#4caf50">R$ ' + p.total.toFixed(2) + '</b></td>' +
+        '<td><span class="badge ' + p.status + '">' + p.status.replace('_',' ').toUpperCase() + '</span>' +
+        (p.tempoEspera ? '<div class="tempo">⏱ ' + p.tempoEspera + ' min</div>' : '') + codigosTxt + '</td>' +
+        '<td class="acoes">' + acoes + '</td>';
+      tbody.appendChild(tr);
+    });
+  }
+
+  function salvarPedidos() {
+    localStorage.setItem('zyon_pedidos', JSON.stringify(pedidos));
+    renderizarPedidos();
+  }
+
+  function confirmarPagamento(idx) {
+    var p = pedidos[idx];
+    if (!confirm('Confirmar que o Pix de R$ ' + p.total.toFixed(2) + ' de ' + p.cliente + ' foi recebido?')) return;
+    p.status = 'pago';
+    salvarPedidos();
+    alert('💰 Pagamento confirmado!\n\nO cliente agora vê apenas: "Aguarde, seu pedido será entregue em ' + p.tempoEspera + ' minutos"');
+  }
+
+  function marcarPreparar(idx) {
+    var p = pedidos[idx];
+    if (!p || p.status !== 'pago') return;
+    p.status = 'preparando';
+    salvarPedidos();
+  }
+
+  /* ---------- Modal de códigos + print ---------- */
+  function abrirModalCodigos(idx) {
+    idxModal = idx;
+    printBase64 = fotoSegura(pedidos[idx].printApp) || null;
+    document.getElementById('modalInfo').textContent =
+      pedidos[idx].cliente + ' • R$ ' + pedidos[idx].total.toFixed(2) + ' • ' +
+      pedidos[idx].itens.map(function(i){ return i.nome + ' × ' + i.qtd; }).join(', ');
+    document.getElementById('mCodigos').value = (pedidos[idx].codigosApp || []).join('\n');
+    var pv = document.getElementById('mPreview');
+    if (printBase64) { pv.src = printBase64; pv.style.display = 'block'; }
+    else pv.style.display = 'none';
+    document.getElementById('mPrint').value = '';
+    document.getElementById('modalFundo').style.display = 'flex';
+  }
+
+  function fecharModal() {
+    document.getElementById('modalFundo').style.display = 'none';
+    idxModal = null; printBase64 = null;
+  }
+
+  function previewPrint(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      printBase64 = e.target.result;
+      var pv = document.getElementById('mPreview');
+      pv.src = printBase64; pv.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function salvarCodigos() {
+    if (idxModal === null) return;
+    var txt = document.getElementById('mCodigos').value.trim();
+    var codigos = txt ? txt.split('\n').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+    if (codigos.length === 0 && !printBase64) {
+      alert('⚠ Digite pelo menos um código ou anexe um print!');
+      return;
+    }
+    pedidos[idxModal].codigosApp = codigos;
+    pedidos[idxModal].printApp = printBase64;
+    pedidos[idxModal].status = 'pronto';
+    salvarPedidos();
+    fecharModal();
+    alert('✅ Pedido marcado como PRONTO!\n\nCódigos e print enviados — o cliente vê tudo na tela dele automaticamente.');
+  }
+
+  function marcarEntregue(idx) {
+    pedidos[idx].status = 'entregue';
+    salvarPedidos();
+  }
+
+  function removerPedido(idx) {
+    if (!confirm('Tem certeza que deseja remover este pedido de "' + pedidos[idx].cliente + '"?')) return;
+    pedidos.splice(idx, 1);
+    salvarPedidos();
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+  /* Leitura segura: nunca quebra se os dados do localStorage forem corrompidos */
+  function lerLS(chave, padrao) {
+    try {
+      var v = JSON.parse(localStorage.getItem(chave) || padrao);
+      return (Array.isArray(v) === Array.isArray(JSON.parse(padrao))) ? v : JSON.parse(padrao);
+    } catch (e) { return JSON.parse(padrao); }
+  }
+  /* Sanitiza URL de imagem: bloqueia javascript: e esquemas perigosos */
+  function fotoSegura(url) {
+    var u = String(url || '');
+    if (!u) return '';
+    if (/^(https:|data:image\/|blob:)/i.test(u)) return esc(u);
+    return '';
+  }
+
+  /* ---------- Backup / Migração ---------- */
+  var CHAVES_BACKUP = ['zyon_itens', 'zyon_cardapio', 'zyon_pedidos', 'zyon_meus_pedidos', 'zyon_config', 'zyon_admin_hash'];
+
+  function exportarDados() {
+    var dados = { _sistema: 'ZYON', _exportadoEm: new Date().toLocaleString('pt-BR') };
+    CHAVES_BACKUP.forEach(function(k) {
+      var v = localStorage.getItem(k);
+      if (v !== null) dados[k] = v;
+    });
+    var blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'zyon_backup_' + Date.now() + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    alert('✅ Backup baixado!\n\n⚠ O arquivo contém suas chaves SyncPay e hash de senha. Não compartilhe!');
+  }
+
+  function importarDados(input) {
+    var file = input.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var dados;
+      try { dados = JSON.parse(e.target.result); }
+      catch (err) { alert('⚠ Arquivo inválido!'); return; }
+      if (dados._sistema !== 'ZYON') { alert('⚠ Este arquivo não é um backup do ZYON!'); return; }
+      if (!confirm('Restaurar backup de ' + (dados._exportadoEm || '?') + '?\n\nOs dados atuais serão substituídos!')) return;
+      CHAVES_BACKUP.forEach(function(k) {
+        if (dados[k] !== undefined) localStorage.setItem(k, dados[k]);
+      });
+      alert('✅ Dados restaurados com sucesso! A página vai recarregar.');
+      location.reload();
+    };
+    reader.readAsText(file);
+    input.value = '';
+  }
+
+  /* Atualização automática quando o cliente pedir em outra aba */
+  window.addEventListener('storage', function(e) {
+    if (e.key === 'zyon_pedidos') renderizarPedidos();
+  });
+
+  renderizarPedidos();
+</script>
+</body>
+</html>
